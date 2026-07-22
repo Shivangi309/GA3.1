@@ -1,45 +1,57 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-import base64
 import os
+from fastapi import FastAPI
+from pydantic import BaseModel
+from dotenv import load_dotenv
 
-from google import genai
-from google.genai import types
+from fastapi.middleware.cors import CORSMiddleware
+
+from openai import OpenAI
+
+load_dotenv()
+
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-
-
-class Request(BaseModel):
+class RequestData(BaseModel):
     image_base64: str
     question: str
 
 
 @app.post("/answer-image")
-def answer(req: Request):
-    image_bytes = base64.b64decode(req.image_base64)
+def answer(req: RequestData):
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=[
-            types.Part.from_bytes(
-                data=image_bytes,
-                mime_type="image/png",
-            ),
-            req.question
-            + "\nReturn ONLY the answer. "
-              "If numeric, return only the number as a string. "
-              "No units. No explanation."
-        ],
+    response = client.chat.completions.create(
+        model="gpt-4.1-mini",
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type":"text",
+                        "text":req.question
+                    },
+                    {
+                        "type":"image_url",
+                        "image_url":{
+                            "url":f"data:image/png;base64,{req.image_base64}"
+                        }
+                    }
+                ]
+            }
+        ]
     )
 
-    return {"answer": response.text.strip()}
+    ans = response.choices[0].message.content.strip()
+
+    return {
+        "answer": str(ans)
+    }
